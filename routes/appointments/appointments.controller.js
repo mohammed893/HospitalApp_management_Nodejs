@@ -1,13 +1,16 @@
 // appointments.js
 
 const asyncHandler = require('../../utils/asyncHandler');
+
 const {pool} = require('../../configs/DataBase_conf');
 
 // @desc    Create a new appointment
 // @route   POST /appointments
 // @access  Public
 const createAppointment = asyncHandler(async (req, res) => {
-  const { doctor_id, patient_id, appointment_date, start_time, end_time, status, type, notes, slot_id } = req.body;
+  const { doctor_id, patient_id, appointment_date,
+     start_time, end_time, status, type, notes,
+      slot_id } = req.body;
 
   try {
     // Check if the slot is available in time_slots
@@ -59,7 +62,8 @@ const getAppointmentsByDoctor = asyncHandler(async (req, res) => {
     console.error('Error fetching appointments:', error);
     res.status(500).json({ error: 'Server error' });
   }
-});
+}); 
+
 const getAppointments = asyncHandler(async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM appointments ');

@@ -1,100 +1,185 @@
-const pool = require('../../configs/DataBase_conf');
+const { pool } = require('../../configs/DataBase_conf');
 const asyncHandler = require('../../utils/asyncHandler');
+const cron = require('node-cron');
 
-// Handler for retrieving time slots
-const getTimeSlots = asyncHandler(async (req, res) => {
-  const { doctor_id, date } = req.query;
-  const result = await pool.query('SELECT * FROM time_slots WHERE doctor_id = $1 AND date = $2', [doctor_id, date]);
-  res.status(200).json(result.rows);
-});
+// Generate slots for a doctor
+const generateSlots = asyncHandler(async (req, res) => {
+    const { doctor_id, start_time, end_time, slot_duration_minutes, activation_date, force, activate_immediately } = req.body;
 
-// Handler for creating a time slot
-const createTimeSlot = asyncHandler(async (req, res) => {
-  const { doctor_id, date, start_time, end_time, is_available } = req.body;
-  const result = await pool.query(
-    'INSERT INTO time_slots (doctor_id, date, start_time, end_time, is_available) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-    [doctor_id, date, start_time, end_time, is_available]
-  );
-  res.status(201).json(result.rows[0]);
-});
+    try {
+        // Check for conflicts
+        const conflicts = await checkConflicts(doctor_id, activation_date);
+        
+        // Handle conflicts if any
+        if (conflicts.length > 0 && !force) {
+            return res.status(400).json({ conflict: true, appointments: conflicts });
+        }
 
-// Handler for updating a time slot
-const updateTimeSlot = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const { date, start_time, end_time, is_available } = req.body;
-  const result = await pool.query(
-    'UPDATE time_slots SET date = $1, start_time = $2, end_time = $3, is_available = $4 WHERE slot_id = $5 RETURNING *',
-    [date, start_time, end_time, is_available, id]
-  );
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: 'Time slot not found' });
-  }
-  res.status(200).json(result.rows[0]);
-});
+        // If force is true, delete conflicting appointments
+        if (force) {
+            await deleteConflictingAppointments(doctor_id, activation_date);
+        }
 
-// Handler for deleting a time slot
-const deleteTimeSlot = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const result = await pool.query('DELETE FROM time_slots WHERE slot_id = $1 RETURNING *', [id]);
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: 'Time slot not found' });
-  }
-  res.status(204).send();
-});
-const getAllTimeSlots = asyncHandler(async (req, res) => {
-    const { doctor_id } = req.params;
-    let queryText = 'SELECT * FROM time_slots WHERE doctor_id = $1';
-    const values = [doctor_id];
-  
-    // Optional filter by availability
-    const { availability } = req.query;
-    if (availability === 'available') {
-      queryText += ' AND is_available = true';
-    } else if (availability === 'unavailable') {
-      queryText += ' AND is_available = false';
+        // Generate slots
+        const slots = await generateAndInsertSlots(doctor_id, start_time, end_time, slot_duration_minutes, activation_date, activate_immediately);
+
+        // Move old slots to the old_time_slots table
+        await moveOldSlots(doctor_id, activation_date);
+
+        // Return generated slots
+        res.status(201).json(slots);
+    } catch (error) {
+        console.error('Error generating slots:', error);
+        res.status(500).json({ error: 'Server error' });
     }
-  
-    const result = await pool.query(queryText, values);
-    res.json(result.rows);
-  });
-const generateTimeSlots = asyncHandler(async (req, res) => {
-    const { doctor_id, start_time, end_time, slot_duration_minutes } = req.body;
-  
-    // Calculate number of slots based on working hours and slot duration
-    const slots = [];
-    let currentStartTime = new Date(`1970-01-01T${start_time}`);
+});
+
+// Function to check for conflicts in appointments
+const checkConflicts = async (doctor_id, activation_date) => {
+    const conflictCheck = await pool.query(
+        `SELECT * FROM appointments WHERE doctor_id = $1 AND appointment_date >= $2`,
+        [doctor_id, activation_date]
+    );
+    return conflictCheck.rows;
+};
+
+// Function to delete conflicting appointments
+const deleteConflictingAppointments = async (doctor_id, activation_date) => {
+    await pool.query(
+        `DELETE FROM appointments WHERE doctor_id = $1 AND appointment_date >= $2`,
+        [doctor_id, activation_date]
+    );
+};
+
+// Function to generate and insert slots into time_slots table
+const generateAndInsertSlots = async (doctor_id, start_time, end_time, slot_duration_minutes, activation_date, activate_immediately) => {
+    const startTime = new Date(`1970-01-01T${start_time}`);
     const endTime = new Date(`1970-01-01T${end_time}`);
     const slotDurationMs = slot_duration_minutes * 60 * 1000;
-  
+    const slots = [];
+
+    let currentStartTime = startTime;
+
     while (currentStartTime < endTime) {
-      const slotEndTime = new Date(currentStartTime.getTime() + slotDurationMs);
-      const queryText = 'INSERT INTO time_slots (doctor_id, date, start_time, end_time, is_available) VALUES ($1, $2, $3, $4, $5) RETURNING *';
-      const values = [doctor_id, currentStartTime.toISOString().slice(0, 10), currentStartTime.toLocaleTimeString(), slotEndTime.toLocaleTimeString(), true];
-      const result = await pool.query(queryText, values);
-      slots.push(result.rows[0]);
-      currentStartTime = slotEndTime;
+        const slotEndTime = new Date(currentStartTime.getTime() + slotDurationMs);
+        const isActivated = activate_immediately ? true : false;
+
+        const queryText = `
+            INSERT INTO time_slots (doctor_id, date, start_time, end_time, is_available)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING *
+        `;
+        const values = [
+            doctor_id,
+            isActivated ? new Date() : activation_date,
+            currentStartTime.toLocaleTimeString(),
+            slotEndTime.toLocaleTimeString(),
+            isActivated
+        ];
+
+        const result = await pool.query(queryText, values);
+        slots.push(result.rows[0]);
+
+        currentStartTime = slotEndTime; // Move to the next slot time
     }
-  
-    res.status(201).json(slots);
-  });
-const deleteTimeSlots = asyncHandler(async (req, res) => {
-    const { doctor_id } = req.params;
-    const queryText = 'DELETE FROM time_slots WHERE doctor_id = $1';
-    await pool.query(queryText, [doctor_id]);
-    res.json({ message: 'Time slots deleted successfully' });
-  });
-const updateAndGenerateTimeSlots = asyncHandler(async (req, res) => {
-    const { doctor_id, start_time, end_time, slot_duration_minutes } = req.body;
-  
-    // Delete existing time slots
-    await deleteTimeSlots(req, res);
-  
-    // Generate new time slots
-    await generateTimeSlots(req, res);
-  });
+
+    return slots;
+};
+
+// Function to move old slots to old_time_slots table
+const moveOldSlots = async (doctor_id, activation_date) => {
+    try {
+        // Select slots that need to be moved
+        const selectQuery = `
+            SELECT * FROM time_slots
+            WHERE doctor_id = $1 AND is_available = true AND date < $2
+        `;
+        const { rows: oldSlots } = await pool.query(selectQuery, [doctor_id, activation_date]);
+
+        // Insert old slots into old_time_slots table
+        for (const slot of oldSlots) {
+            const insertQuery = `
+                INSERT INTO old_time_slots (doctor_id, date, start_time, end_time, is_available, deletion_date)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `;
+            const values = [
+                slot.doctor_id,
+                slot.date,
+                slot.start_time,
+                slot.end_time,
+                slot.is_available,
+                activation_date
+            ];
+            await pool.query(insertQuery, values);
+        }
+
+        // Delete old slots from time_slots table
+        const deleteQuery = `
+            DELETE FROM time_slots
+            WHERE doctor_id = $1 AND is_available = true AND date < $2
+        `;
+        await pool.query(deleteQuery, [doctor_id, activation_date]);
+
+        console.log('Old slots moved successfully');
+    } catch (error) {
+        console.error('Error moving old slots:', error);
+    }
+};
+
+// Schedule the cron job to run daily at midnight
+cron.schedule('0 0 * * *', async () => {
+    try {
+        const result = await pool.query('SELECT doctor_id, activation_date FROM time_slots WHERE date = CURRENT_DATE');
+        for (const { doctor_id, activation_date } of result.rows) {
+            await moveOldSlots(doctor_id, activation_date);
+        }
+        console.log('Cron job executed successfully');
+    } catch (error) {
+        console.error('Error executing cron job:', error);
+    }
+});
+
+const updateSlotAvailability = asyncHandler(async (req, res) => {
+    const { slot_id, is_available, force = false } = req.body;
+    const currentDate = new Date();
+    try {
+        if (force) {
+            // Delete future appointments using the slot
+            await pool.query(
+                `DELETE FROM appointments WHERE slot_id = $1 AND appointment_date > CURRENT_DATE`,
+                [slot_id]
+            );
+        } else {
+            // Check for future appointments using the slot
+            const futureAppointmentsQuery = await pool.query(
+                `SELECT * FROM appointments WHERE slot_id = $1 AND appointment_date > CURRENT_DATE`,
+                [slot_id]
+            );
+
+            if (futureAppointmentsQuery.rows.length > 0) {
+                return res.status(400).json({ error: 'Cannot update slot with future appointments' });
+            }
+        }
+
+        // Update the slot availability
+        const updateQuery = `
+            UPDATE time_slots SET is_available = $1 WHERE slot_id = $2 RETURNING *
+        `;
+        const updateValues = [is_available, slot_id];
+        const updatedSlot = await pool.query(updateQuery, updateValues);
+        if (updatedSlot.rows.length == 0) {
+            res.status(404).json({ error: "Slot Not found" });
+        }
+        res.status(200).json(updatedSlot.rows[0]);
+    } catch (error) {
+        console.error('Error updating slot availability:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 module.exports = {
-  getTimeSlots,
-  createTimeSlot,
-  updateTimeSlot,
-  deleteTimeSlot,
+    generateSlots,
+    updateSlotAvailability,
+    checkConflicts,
+    deleteConflictingAppointments
 };

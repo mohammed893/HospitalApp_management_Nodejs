@@ -1,235 +1,184 @@
-const express = require('express');
-const {pool} = require('../../configs/DataBase_conf'); // assuming you have a db module to manage the pool
+
+const { pool } = require('../../configs/DataBase_conf');
 const asyncHandler = require('../../utils/asyncHandler');
+const {checkConflicts , deleteConflictingAppointments} = require('../TimeSlots/TimeSlots.controller');
 
-// Generate slots dynamically for a doctor
-const generateSlots = asyncHandler(async (req, res) => {
-    const { doctor_id, start_time, end_time, slot_duration_minutes, activation_date, force } = req.body;
+// Show all appointments for a doctor with option future or all
+const getAppointmentsForDoctor = asyncHandler(async (req, res) => {
+  const { doctor_id } = req.params;
+  const { future } = req.query; // Get the optional 'future' query parameter
 
+  try {
+      let queryText;
+      const queryParams = [doctor_id];
+
+      if (future === 'true') {
+          queryText = 'SELECT * FROM appointments WHERE doctor_id = $1 AND appointment_date >= CURRENT_DATE';
+      } else {
+          queryText = 'SELECT * FROM appointments WHERE doctor_id = $1';
+      }
+
+      const { rows } = await pool.query(queryText, queryParams);
+      res.json(rows);
+  } catch (err) {
+      console.error('Error fetching appointments for doctor:', err);
+      res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Cancel an appointment by doctor with appointmentId
+const cancelAppointmentByDoctor = asyncHandler(async (req, res) => {
+    const { appointment_id } = req.params;
     try {
-        // Check for conflicts with existing appointments after activation_date
-        const conflictCheck = await pool.query(
-            `SELECT *
-             FROM appointments
-             WHERE doctor_id = $1
-               AND appointment_date >= $2
-              `,
-            [doctor_id, activation_date]
-        );
-
-        // Handle conflicts if any
-        if (conflictCheck.rows.length > 0 && !force) {
-            return res.status(400).json({ conflict: true, appointments: conflictCheck.rows });
+        const { rowCount } = await pool.query('DELETE FROM appointments WHERE appointment_id = $1', [appointment_id]);
+        if (rowCount === 0) {
+            return res.status(404).json({ error: 'Appointment not found' });
         }
-
-        // If force is true, delete conflicting appointments
-        if (force) {
-            await pool.query(
-                `DELETE FROM appointments
-                 WHERE doctor_id = $1
-                   AND appointment_date >= $2
-                   `,
-                [doctor_id, activation_date]
-            );
-        }
-
-        // Begin slot generation process
-        let currentStartTime = new Date(`1970-01-01T${start_time}`);
-        const endTime = new Date(`1970-01-01T${end_time}`);
-        const slotDurationMs = slot_duration_minutes * 60 * 1000;
-        const slots = [];
-
-        // Generate slots iteratively
-        while (currentStartTime < endTime) {
-            const slotEndTime = new Date(currentStartTime.getTime() + slotDurationMs);
-
-            // Insert slot into time_slots table
-            const queryText = `
-                INSERT INTO time_slots (doctor_id, date, start_time, end_time, is_available)
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING *
-            `;
-            const values = [
-                doctor_id,
-                activation_date,
-                currentStartTime.toLocaleTimeString(),
-                slotEndTime.toLocaleTimeString(),
-                true
-            ];
-            const result = await pool.query(queryText, values);
-            slots.push(result.rows[0]);
-
-            currentStartTime = slotEndTime; // Move to the next slot time
-        }
-
-        // Return generated slots
-        res.status(201).json(slots);
-    } catch (error) {
-        console.error('Error generating slots:', error);
+        res.status(200).json(updatedSlot.rows[0]);
+    } catch (err) {
+        console.error('Error canceling appointment by doctor:', err);
         res.status(500).json({ error: 'Server error' });
     }
 });
-// Update doctor's slots
-const updateSlotAvailability = asyncHandler(async (req, res) => {
-  const { slot_id, is_available, force = false } = req.body;
+
+// Get all doctors
+const getAllDoctors = asyncHandler(async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM doctors');
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error('Error fetching doctors:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Get doctor by ID
+const getDoctorById = asyncHandler(async (req, res) => {
+    const doctor_id = req.params.doctor_id;
+
+    try {
+        const result = await pool.query('SELECT * FROM doctors WHERE doctor_id = $1', [doctor_id]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Doctor not found' });
+        }
+        res.status(200).json(result.rows[0]);
+    } catch (error) {
+        console.error('Error fetching doctor:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Create a new doctor
+const createDoctor = asyncHandler(async (req, res) => {
+    const { name, specialization, qualification , experience , email , phone , working_hours } = req.body;
+
+    try {
+        const result = await pool.query(
+            'INSERT INTO doctors (name, specialization, qualification, experience, email, phone, working_hours) VALUES ($1, $2, $3 , $4 , $5 , $6 , $7) RETURNING *',
+            [name, specialization, qualification , experience , email , phone , working_hours]
+        );
+
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
+        console.error('Error creating doctor:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Update a doctor by ID
+
+const updateDoctor = asyncHandler(async (req, res) => {
+  const doctor_id = req.params.doctor_id;
+  const updates = req.body; // Object containing the fields to update
+
+  try {
+      // Check if the updates object is empty
+      if (Object.keys(updates).length === 0) {
+          return res.status(400).json({ error: 'No fields provided to update' });
+      }
+
+      // Prepare the dynamic query parts
+      const fields = [];
+      const values = [];
+      let index = 1;
+
+      // Loop through the updates object to construct the query dynamically
+      for (const [key, value] of Object.entries(updates)) {
+          fields.push(`${key} = $${index++}`);
+          values.push(value);
+      }
+
+      values.push(doctor_id); //last push for last index 
+
+      const queryText = `
+          UPDATE doctors
+          SET ${fields.join(', ')}
+          WHERE doctor_id = $${index} 
+          RETURNING *
+      `;
+
+      const result = await pool.query(queryText, values);
+
+      if (result.rows.length === 0) {
+          return res.status(404).json({ error: 'Doctor not found' });
+      }
+
+      res.status(200).json(result.rows[0]);
+  } catch (error) {
+      console.error('Error updating doctor:', error);
+      res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
+// Delete a doctor by ID
+const deleteDoctor = asyncHandler(async (req, res) => {
+  const doctor_id = req.params.doctor_id;
+  const { force } = req.body || false; // Default force to false if req.body is undefined or falsy
+  const currentDate = new Date();
 
   try {
       if (force) {
-          // Delete future appointments using the slot
-          await pool.query(
-              `DELETE FROM appointments
-               WHERE slot_id = $1 AND appointment_date > CURRENT_DATE`,
-              [slot_id]
-          );
-      } else {
-          // Check for future appointments using the slot
-          const futureAppointmentsQuery = await pool.query(
-              `SELECT * FROM appointments
-               WHERE slot_id = $1 AND appointment_date > CURRENT_DATE`,
-              [slot_id]
-          );
+          // Forceful deletion: delete conflicting appointments first
+          await deleteConflictingAppointments(doctor_id, currentDate);
 
-          if (futureAppointmentsQuery.rows.length > 0) {
-              return res.status(400).json({ error: 'Cannot update slot with future appointments' });
+          // Now delete the doctor
+          const result = await pool.query('DELETE FROM doctors WHERE doctor_id = $1 RETURNING *', [doctor_id]);
+
+          if (result.rows.length === 0) {
+              return res.status(404).json({ error: 'Doctor not found' });
           }
+
+          return res.status(200).json({ message: 'Doctor deleted successfully' });
       }
 
-      // Update the slot availability
-      const updateQuery = `
-          UPDATE time_slots
-          SET is_available = $1
-          WHERE slot_id = $2
-          RETURNING *
-      `;
-      const updateValues = [is_available, slot_id];
-      const updatedSlot = await pool.query(updateQuery, updateValues);
+      // Regular deletion: check for conflicts before proceeding
+      const conflicts = await checkConflicts(doctor_id, currentDate);
 
-      res.status(200).json(updatedSlot.rows[0]);
-  } catch (error) {
-      console.error('Error updating slot availability:', error);
-      res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Show all appointments for a doctor
-const getAppointmentsForDoctor = asyncHandler(async (req, res) => {
-  const { doctor_id } = req.params;
-  try {
-    const { rows } = await pool.query('SELECT * FROM appointments WHERE doctor_id = $1', [doctor_id]);
-    res.json(rows);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Cancel an appointment by doctor
-const cancelAppointmentByDoctor = asyncHandler(async (req, res) => {
-  const { appointment_id } = req.params;
-  try {
-    const { rowCount } = await pool.query('DELETE FROM appointments WHERE appointment_id = $1', [appointment_id]);
-    if (rowCount === 0) {
-      return res.status(404).json({ error: 'Appointment not found' });
-    }
-    res.status(204).end();
-  } catch (err) {
-    next(err);
-  }
-});
-const getAllDoctors = asyncHandler(async (req, res) => {
-    try {
-      const result = await pool.query('SELECT * FROM doctors');
-      res.status(200).json(result.rows);
-    } catch (error) {
-      console.error('Error fetching doctors:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-const getDoctorById = asyncHandler(async (req, res) => {
-    const doctor_id = req.params.doctor_id;
-  
-    try {
-      const result = await pool.query('SELECT * FROM doctors WHERE doctor_id = $1', [doctor_id]);
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Doctor not found' });
+      if (conflicts.length > 0) {
+          return res.status(400).json({ conflict: true, appointments: conflicts });
       }
-      res.status(200).json(result.rows[0]);
-    } catch (error) {
-      console.error('Error fetching doctor:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-  // @desc    Create a new doctor
-  // @route   POST /doctors
-  // @access  Public
-const createDoctor = asyncHandler(async (req, res) => {
-    const { name, specialty, contact_info } = req.body;
-  
-    try {
-      const result = await pool.query(
-        'INSERT INTO doctors (name, specialty, contact_info) VALUES ($1, $2, $3) RETURNING *',
-        [name, specialty, contact_info]
-      );
-  
-      res.status(201).json(result.rows[0]);
-    } catch (error) {
-      console.error('Error creating doctor:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-  // @desc    Update a doctor by ID
-  // @route   PUT /doctors/:doctor_id
-  // @access  Public
-  const updateDoctor = asyncHandler(async (req, res) => {
-    const doctor_id = req.params.doctor_id;
-    const { name, specialty, contact_info } = req.body;
-  
-    try {
-      const result = await pool.query(
-        'UPDATE doctors SET name = $1, specialty = $2, contact_info = $3 WHERE doctor_id = $4 RETURNING *',
-        [name, specialty, contact_info, doctor_id]
-      );
-  
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Doctor not found' });
-      }
-  
-      res.status(200).json(result.rows[0]);
-    } catch (error) {
-      console.error('Error updating doctor:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-  // @desc    Delete a doctor by ID
-  // @route   DELETE /doctors/:doctor_id
-  // @access  Public
-  const deleteDoctor = asyncHandler(async (req, res) => {
-    const doctor_id = req.params.doctor_id;
-  
-    try {
+
+      // No conflicts, proceed with deletion
       const result = await pool.query('DELETE FROM doctors WHERE doctor_id = $1 RETURNING *', [doctor_id]);
-  
+
       if (result.rows.length === 0) {
-        return res.status(404).json({ error: 'Doctor not found' });
+          return res.status(404).json({ error: 'Doctor not found' });
       }
-  
+
       res.status(200).json({ message: 'Doctor deleted successfully' });
-    } catch (error) {
+  } catch (error) {
       console.error('Error deleting doctor:', error);
       res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
+  }
+});
+
 module.exports = {
-  generateSlots,
-  updateSlots,
-  getAppointmentsForDoctor,
-  cancelAppointmentByDoctor,
-  getAllDoctors,
-  getDoctorById,
-  createDoctor,
-  updateDoctor,
-  deleteDoctor,
+    getAppointmentsForDoctor,
+    cancelAppointmentByDoctor,
+    getAllDoctors,
+    getDoctorById,
+    createDoctor,
+    updateDoctor,
+    deleteDoctor,
 };

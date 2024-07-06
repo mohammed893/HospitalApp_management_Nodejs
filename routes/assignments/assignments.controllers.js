@@ -23,7 +23,7 @@ async function GetALl (req, res)  {
       res.status(500).send('Server Error');
     }
   }
-  async function UpdateOne(req, res) {
+async function UpdateOne(req, res) {
     const { id } = req.params;
     const updates = req.body;
   
