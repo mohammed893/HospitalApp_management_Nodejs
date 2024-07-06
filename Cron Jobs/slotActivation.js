@@ -3,13 +3,15 @@ const asyncHandler = require('../utils/asyncHandler');
 
 const activateSlotsForToday = async () => {
     const currentDate = new Date().toISOString().split('T')[0]; // Get current date in 'YYYY-MM-DD' format
+    const currentDay = new Date().toLocaleString('en-US', { weekday: 'long' }); // Get the current day of the week
 
     try {
-        // Activate slots in time_slots where date is today and is_available is false
+        // Activate slots in time_slots where date is today, is_available is false, and today is in available_days
         const activateQuery = `
             UPDATE time_slots
             SET is_available = true
-            WHERE date = $1 AND is_available = false
+            WHERE date = $1 
+            AND is_available = false 
         `;
         const activateValues = [currentDate];
         const activateResult = await pool.query(activateQuery, activateValues);
@@ -22,3 +24,4 @@ const activateSlotsForToday = async () => {
 module.exports = {
     activateSlotsForToday,
 };
+

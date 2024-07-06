@@ -3,16 +3,35 @@
 const asyncHandler = require('../../utils/asyncHandler');
 
 const {pool} = require('../../configs/DataBase_conf');
+const getDayOfWeek = (date) => {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return days[new Date(date).getDay()];
+};
+// @desc    Create a new appointment
+// @route   POST /appointments
+// @access  Public
+
 
 // @desc    Create a new appointment
 // @route   POST /appointments
 // @access  Public
 const createAppointment = asyncHandler(async (req, res) => {
-  const { doctor_id, patient_id, appointment_date,
-     start_time, end_time, status, type, notes,
-      slot_id } = req.body;
+  const {
+    doctor_id,
+    patient_id,
+    appointment_date,
+    start_time,
+    end_time,
+    status,
+    type,
+    notes,
+    slot_id,
+  } = req.body;
 
   try {
+    // Get the day of the week for the appointment date
+    const dayOfWeek = getDayOfWeek(appointment_date);
+
     // Check if the slot is available in time_slots
     const slotCheck = await pool.query(
       `SELECT * FROM time_slots 
@@ -22,6 +41,12 @@ const createAppointment = asyncHandler(async (req, res) => {
 
     if (slotCheck.rows.length === 0) {
       return res.status(400).json({ error: 'Slot not available' });
+    }
+
+    // Check if the slot is available on the specified day
+    const slot = slotCheck.rows[0];
+    if (!(slot.available_days.days.includes(dayOfWeek))) {
+      return res.status(400).json({ error: 'Slot not available on this day' });
     }
 
     // Check for overlapping appointments

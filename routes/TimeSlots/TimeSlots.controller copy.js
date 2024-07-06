@@ -4,8 +4,7 @@ const cron = require('node-cron');
 
 // Generate slots for a doctor
 const generateSlots = asyncHandler(async (req, res) => {
-    const { doctor_id, start_time, end_time, slot_duration_minutes, activation_date,
-         available_days, force, activate_immediately } = req.body;
+    const { doctor_id, start_time, end_time, slot_duration_minutes, activation_date, available_days, force, activate_immediately } = req.body;
 
     try {
         // Check if the doctor exists
@@ -128,40 +127,44 @@ const moveOldSlots = async (doctor_id, activation_date, immediatelyActivate = fa
         let queryValues = [doctor_id];
 
         if (immediatelyActivate) {
-            // Immediately activate: Delete old slots directly
+            selectQuery = `
+                SELECT * FROM time_slots
+                WHERE doctor_id = $1 AND is_available = true
+            `;
+        } else {
+            selectQuery = `
+                SELECT * FROM time_slots
+                WHERE doctor_id = $1 AND is_available = true AND date < $2
+            `;
+            queryValues.push(activation_date);
+        }
+        const { rows: oldSlots } = await pool.query(selectQuery, queryValues);
+
+        // Insert old slots into old_time_slots table
+        for (const slot of oldSlots) {
+            const insertQuery = `
+                INSERT INTO old_time_slots (doctor_id, date, start_time, end_time, is_available, deletion_date)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `;
+            const values = [
+                slot.doctor_id,
+                slot.date,
+                slot.start_time,
+                slot.end_time,
+                slot.is_available,
+                activation_date
+            ];
+            await pool.query(insertQuery, values);
+        }
+
+        if (immediatelyActivate) {
             await pool.query(`
                 DELETE FROM time_slots
                 WHERE doctor_id = $1 AND is_available = true
             `, [doctor_id]);
-            console.log('Old slots deleted directly successfully');
-        } else {
-            // Future activation: Move old slots to old_time_slots table
-            selectQuery = `
-                SELECT * FROM time_slots
-                WHERE doctor_id = $1 AND is_available = true AND date <= $2
-            `;
-            queryValues.push(activation_date);
-            const { rows: oldSlots } = await pool.query(selectQuery, queryValues);
-
-            for (const slot of oldSlots) {
-                const insertQuery = `
-                    INSERT INTO old_time_slots (doctor_id, old_slot_id, date, start_time, end_time, is_available, deletion_date)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                `;
-                const values = [
-                    slot.doctor_id,
-                    slot.slot_id, // Include slot_id here
-                    slot.date,
-                    slot.start_time,
-                    slot.end_time,
-                    slot.is_available,
-                    activation_date
-                ];
-                await pool.query(insertQuery, values);
-            }
-
-            console.log('Old slots moved successfully and waiting for scheduled deletion');
         }
+
+        console.log('Old slots moved successfully');
     } catch (error) {
         console.error('Error moving old slots:', error);
     }

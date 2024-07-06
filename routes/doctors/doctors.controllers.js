@@ -3,6 +3,14 @@ const { pool } = require('../../configs/DataBase_conf');
 const asyncHandler = require('../../utils/asyncHandler');
 const {checkConflicts , deleteConflictingAppointments} = require('../TimeSlots/TimeSlots.controller');
 
+
+const checkDoctorExists = async (doctor_id) => {
+    const query = 'SELECT COUNT(*) FROM doctors WHERE doctor_id = $1';
+    const result = await pool.query(query, [doctor_id]);
+    return parseInt(result.rows[0].count) > 0;
+};
+
+
 // Show all appointments for a doctor with option future or all
 const getAppointmentsForDoctor = asyncHandler(async (req, res) => {
   const { doctor_id } = req.params;
@@ -172,6 +180,42 @@ const deleteDoctor = asyncHandler(async (req, res) => {
       res.status(500).json({ error: 'Server error' });
   }
 });
+// View all active and future slots for a specific doctor
+const getSlotsForDoctor = asyncHandler(async (req, res) => {
+    const { doctor_id } = req.params;
+
+    try {
+        //Check for the doctor first 
+        const doctorExistenceCheck = await checkDoctorExists(doctor_id);
+        if (!doctorExistenceCheck) {
+            return res.status(404).json({ error: `Doctor with ID ${doctor_id} not found` });
+        }
+        // Fetch active slots (is_available = true)
+        const activeQuery = `
+            SELECT * FROM time_slots
+            WHERE doctor_id = $1 AND is_available = true
+            ORDER BY date, start_time
+        `;
+        const activeSlots = await pool.query(activeQuery, [doctor_id]);
+
+        // Fetch future slots (is_available = false and date >= CURRENT_DATE)
+        const futureQuery = `
+            SELECT * FROM time_slots
+            WHERE doctor_id = $1 AND is_available = false AND date >= CURRENT_DATE
+            ORDER BY date, start_time
+        `;
+        const futureSlots = await pool.query(futureQuery, [doctor_id]);
+
+        res.json({
+            activeSlots: activeSlots.rows,
+            futureSlots: futureSlots.rows
+        });
+    } catch (error) {
+        console.error('Error fetching slots for doctor:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 
 module.exports = {
     getAppointmentsForDoctor,
@@ -181,4 +225,5 @@ module.exports = {
     createDoctor,
     updateDoctor,
     deleteDoctor,
+    getSlotsForDoctor
 };

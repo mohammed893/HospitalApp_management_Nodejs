@@ -15,4 +15,5 @@ router.post('/generate-slots', TimeSlots.generateSlots);
 router.get('/:doctor_id/appointments', doctorsController.getAppointmentsForDoctor);
 router.patch('/SlotAvailability' , TimeSlots.updateSlotAvailability);
 router.delete('/appointments/:appointment_id', doctorsController.cancelAppointmentByDoctor)
+router.get('/getSlots/:doctor_id',doctorsController.getSlotsForDoctor);
 module.exports = router;
