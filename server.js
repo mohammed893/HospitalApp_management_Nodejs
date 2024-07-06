@@ -4,6 +4,7 @@ const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 const {pool} = require('./configs/DataBase_conf');
 const {startCronJobs} = require('./Cron Jobs/index');
+const {initializeSocket} = require('./sockets/socket.controller');
 
 async function startServer() {
   await pool.connect().then(
@@ -12,8 +13,8 @@ async function startServer() {
     console.error('Error connecting to PostgreSQL:', err.stack);
     process.exit(1);
   });
-  startCronJobs();
-
+  startCronJobs();//Initialize CronJob
+  await initializeSocket();//init Socket
   server.listen(PORT, () => {
     console.log(`Listening on Port ${PORT} !`);
   });

@@ -3,6 +3,7 @@
 const asyncHandler = require('../../utils/asyncHandler');
 
 const {pool} = require('../../configs/DataBase_conf');
+const SocketsController = require('../../sockets/socket.controller');
 const getDayOfWeek = (date) => {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   return days[new Date(date).getDay()];
@@ -27,7 +28,7 @@ const createAppointment = asyncHandler(async (req, res) => {
     notes,
     slot_id,
   } = req.body;
-
+  
   try {
     // Get the day of the week for the appointment date
     const dayOfWeek = getDayOfWeek(appointment_date);
@@ -57,6 +58,8 @@ const createAppointment = asyncHandler(async (req, res) => {
       [doctor_id, appointment_date, slot_id]
     );
 
+    
+
     if (appointmentCheck.rows.length > 0) {
       return res.status(400).json({ error: 'Appointment conflict' });
     }
@@ -66,6 +69,8 @@ const createAppointment = asyncHandler(async (req, res) => {
       'INSERT INTO appointments (doctor_id, patient_id, appointment_date, start_time, end_time, status, type, notes, slot_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
       [doctor_id, patient_id, appointment_date, start_time, end_time, status, type, notes, slot_id]
     );
+    //Send Notifications to staff
+    SocketsController.sendToClientByRole('staff' , result.rows.appointment_id)
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
