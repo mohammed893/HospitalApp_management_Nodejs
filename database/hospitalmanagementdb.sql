@@ -22,12 +22,29 @@ SET default_table_access_method = heap;
 CREATE DATABASE project055;
 \connect project055;
 
+-- Create sequences
+
+
+--
+-- Name: appointments_appointment_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.appointments_appointment_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.appointments_appointment_id_seq OWNER TO postgres;
+
 --
 -- Name: appointments; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.appointments (
-    appointment_id integer NOT NULL,
+    appointment_id integer DEFAULT nextval('public.appointments_appointment_id_seq'::regclass) NOT NULL,
     doctor_id integer,
     patient_id integer,
     appointment_date date NOT NULL,
@@ -41,12 +58,24 @@ CREATE TABLE public.appointments (
 
 ALTER TABLE public.appointments OWNER TO postgres;
 
+
+-- Sequence for doctor_id in doctors table
+CREATE SEQUENCE public.doctors_doctor_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.doctors_doctor_id_seq OWNER TO postgres;
+
 --
 -- Name: doctors; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.doctors (
-    doctor_id integer NOT NULL,
+    doctor_id integer DEFAULT nextval('public.doctors_doctor_id_seq'::regclass) NOT NULL,
     firstname character varying(50),
     qualification text,
     specialization text,
@@ -88,12 +117,28 @@ CREATE TABLE public.old_time_slots (
 
 ALTER TABLE public.old_time_slots OWNER TO postgres;
 
+
+--
+-- Name: old_time_slots_old_slot_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.patients_patient_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+ALTER SEQUENCE public.patients_patient_id_seq OWNER TO postgres;
+
+
 --
 -- Name: patients; Type: TABLE; Schema: public; Owner: postgres
 --
 
 CREATE TABLE public.patients (
-    firstname character varying(50) NOT NULL,
+    firstname character varying(50) DEFAULT nextval('public.patients_patient_id_seq'::regclass) NOT NULL,
     secondname character varying(50) NOT NULL,
     nationalidnumber character varying(20) NOT NULL,
     dateofbirth date,
@@ -502,35 +547,35 @@ ALTER TABLE ONLY public.appointments
 --
 
 ALTER TABLE ONLY public.appointments
-    ADD CONSTRAINT appointments_slot_id_fkey FOREIGN KEY (slot_id) REFERENCES public.time_slots(slot_id);
+    ADD CONSTRAINT appointments_slot_id_fkey FOREIGN KEY (slot_id) REFERENCES public.time_slots(slot_id) ON DELETE CASCADE;
 
 --
 -- Name: raises_staffid_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.raises
-    ADD CONSTRAINT raises_staffid_fkey FOREIGN KEY (staffid) REFERENCES public.staff(staffid);
+    ADD CONSTRAINT raises_staffid_fkey FOREIGN KEY (staffid) REFERENCES public.staff(staffid) ON DELETE CASCADE;
 
 --
 -- Name: requests_staffid_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.requests
-    ADD CONSTRAINT requests_staffid_fkey FOREIGN KEY (staffid) REFERENCES public.staff(staffid);
+    ADD CONSTRAINT requests_staffid_fkey FOREIGN KEY (staffid) REFERENCES public.staff(staffid) ON DELETE CASCADE;
 
 --
 -- Name: staff_managerid_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.staff
-    ADD CONSTRAINT staff_managerid_fkey FOREIGN KEY (managerid) REFERENCES public.staff(staffid);
+    ADD CONSTRAINT staff_managerid_fkey FOREIGN KEY (managerid) REFERENCES public.staff(staffid) ON DELETE CASCADE;
 
 --
 -- Name: time_slots_doctor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
 ALTER TABLE ONLY public.time_slots
-    ADD CONSTRAINT time_slots_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.doctors(doctor_id);
+    ADD CONSTRAINT time_slots_doctor_id_fkey FOREIGN KEY (doctor_id) REFERENCES public.doctors(doctor_id) ON DELETE CASCADE;
 
 --
 -- PostgreSQL database dump complete
