@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>File Upload</title>
+</head>
+
+<body>
+  <h2>Upload File</h2>
+  <form id="uploadForm" enctype="multipart/form-data">
+    <label for="fileInput">Choose file:</label>
+    <input type="file" id="fileInput" name="file" required>
+    <br><br>
+    <button type="submit">Upload</button>
+  </form>
+
+  <script>
+    document.getElementById('uploadForm').addEventListener('submit', function (event) {
+      event.preventDefault();
+
+      var formData = new FormData();
+      var fileInput = document.getElementById('fileInput');
+      formData.append('file', fileInput.files[0]);
+
+      fetch('http://localhost:3000/rays/brain/123/24-7-2024/segmentation', {
+        method: 'POST',
+        body: formData
+      }).then(response => {
+        if (response.ok) {
+          alert('File uploaded successfully!');
+        } else {
+          alert('File upload failed!');
+        }
+      }).catch(error => {
+        alert('Error: ' + error.message);
+      });
+    });
+  </script>
+</body>
+
+</html>
