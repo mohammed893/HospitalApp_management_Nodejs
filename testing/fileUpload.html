@@ -24,7 +24,7 @@
       var fileInput = document.getElementById('fileInput');
       formData.append('file', fileInput.files[0]);
 
-      fetch('http://localhost:3000/rays/brain/123/24-7-2024/segmentation', {
+      fetch('http://localhost:3000/rays/brain/10/24-7-2024', {
         method: 'POST',
         body: formData
       }).then(response => {

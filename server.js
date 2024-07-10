@@ -8,14 +8,14 @@ const { initializeSocket } = require('./sockets/socket.controller');
 const mongoose = require('mongoose');
 
 async function startServer() {
-  await pool.connect().then(
-    () => { console.log('Connected to PostgreSQL database'); }
-  ).catch((err) => {
-    console.error('Error connecting to PostgreSQL:', err.stack);
-    process.exit(1);
-  });
-  startCronJobs();//Initialize CronJob
-  await initializeSocket();//init Socket
+  // await pool.connect().then(
+  //   () => { console.log('Connected to PostgreSQL database'); }
+  // ).catch((err) => {
+  //   console.error('Error connecting to PostgreSQL:', err.stack);
+  //   process.exit(1);
+  // });
+  // startCronJobs();//Initialize CronJob
+  // await initializeSocket();//init Socket
   await mongoose
     .connect('mongodb+srv://omarsaad08:5RCr7kLbTk1cwiUE@cluster0.lubh9dn.mongodb.net/tumora?retryWrites=true&w=majority&appName=Cluster0')
     .then(() => {
