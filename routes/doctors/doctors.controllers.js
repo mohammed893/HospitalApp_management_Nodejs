@@ -13,27 +13,36 @@ const checkDoctorExists = async (doctor_id) => {
 
 // Show all appointments for a doctor with option future or all
 const getAppointmentsForDoctor = asyncHandler(async (req, res) => {
-  const { doctor_id } = req.params;
-  const { future } = req.query; // Get the optional 'future' query parameter
+    const { doctor_id } = req.params;
+    const { future } = req.query; // Get the optional 'future' query parameter
 
-  try {
-      let queryText;
-      const queryParams = [doctor_id];
+    try {
+        let queryText;
+        const queryParams = [doctor_id];
 
-      if (future === 'true') {
-          queryText = 'SELECT * FROM appointments WHERE doctor_id = $1 AND appointment_date >= CURRENT_DATE';
-      } else {
-          queryText = 'SELECT * FROM appointments WHERE doctor_id = $1';
-      }
+        if (future === 'true') {
+            queryText = `
+                SELECT a.*, p.firstname, p.email, p.phonenumber
+                FROM appointments a
+                JOIN patients p ON a.patient_id = p.patient_id
+                WHERE a.doctor_id = $1 AND a.appointment_date >= CURRENT_DATE
+            `;
+        } else {
+            queryText = `
+                SELECT a.*, p.firstname, p.email, p.phonenumber
+                FROM appointments a
+                JOIN patients p ON a.patient_id = p.patient_id
+                WHERE a.doctor_id = $1
+            `;
+        }
 
-      const { rows } = await pool.query(queryText, queryParams);
-      res.json(rows);
-  } catch (err) {
-      console.error('Error fetching appointments for doctor:', err);
-      res.status(500).json({ error: 'Server error' });
-  }
+        const { rows } = await pool.query(queryText, queryParams);
+        res.json(rows);
+    } catch (err) {
+        console.error('Error fetching appointments for doctor:', err);
+        res.status(500).json({ error: 'Server error' });
+    }
 });
-
 // Cancel an appointment by doctor with appointmentId
 const cancelAppointmentByDoctor = asyncHandler(async (req, res) => {
     const { appointment_id } = req.params;
@@ -42,7 +51,7 @@ const cancelAppointmentByDoctor = asyncHandler(async (req, res) => {
         if (rowCount === 0) {
             return res.status(404).json({ error: 'Appointment not found' });
         }
-        res.status(200).json(updatedSlot.rows[0]);
+        res.status(200).json('Deleted');
     } catch (err) {
         console.error('Error canceling appointment by doctor:', err);
         res.status(500).json({ error: 'Server error' });
@@ -82,7 +91,7 @@ const createDoctor = asyncHandler(async (req, res) => {
 
     try {
         const result = await pool.query(
-            'INSERT INTO doctors (name, specialization, qualification, experience, email, phone, working_hours) VALUES ($1, $2, $3 , $4 , $5 , $6 , $7) RETURNING *',
+            'INSERT INTO doctors (firstname, specialization, qualification, experience, email, phone, working_hours) VALUES ($1, $2, $3 , $4 , $5 , $6 , $7) RETURNING *',
             [name, specialization, qualification , experience , email , phone , working_hours]
         );
 
@@ -146,16 +155,16 @@ const deleteDoctor = asyncHandler(async (req, res) => {
   const currentDate = new Date();
 
   try {
+    const doctorExistenceCheck = await checkDoctorExists(doctor_id);
+    if(!doctorExistenceCheck){
+        return res.status(404).json({ error: 'Doctor not found' });
+    }
       if (force) {
           // Forceful deletion: delete conflicting appointments first
           await deleteConflictingAppointments(doctor_id, currentDate);
 
           // Now delete the doctor
           const result = await pool.query('DELETE FROM doctors WHERE doctor_id = $1 RETURNING *', [doctor_id]);
-
-          if (result.rows.length === 0) {
-              return res.status(404).json({ error: 'Doctor not found' });
-          }
 
           return res.status(200).json({ message: 'Doctor deleted successfully' });
       }
@@ -215,7 +224,63 @@ const getSlotsForDoctor = asyncHandler(async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
+const HomeScreenData = asyncHandler(async (req, res) => {
+    const doctor_id = req.params.doctor_id;
+    const currentDate = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
 
+    try {
+        // Fetch doctor information
+        const doctorQuery = `
+            SELECT * FROM doctors
+            WHERE doctor_id = $1
+        `;
+        const doctorResult = await pool.query(doctorQuery, [doctor_id]);
+
+        if (doctorResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Doctor not found' });
+        }
+
+        const doctor = doctorResult.rows[0];
+
+        // Fetch today's appointments
+        const appointmentsQuery = `
+            SELECT a.*, p.firstname, p.email, p.phonenumber
+            FROM appointments a
+            JOIN patients p ON a.patient_id = p.patient_id
+            WHERE a.doctor_id = $1 AND a.appointment_date = $2
+        `;
+        const appointmentsResult = await pool.query(appointmentsQuery, [doctor_id, currentDate]);
+
+        const activeQuery = `
+            SELECT * FROM time_slots
+            WHERE doctor_id = $1 AND is_available = true
+            ORDER BY date, start_time
+        `;
+        const activeSlots = await pool.query(activeQuery , [doctor_id] );
+
+        const futureQuery = `
+            SELECT * FROM time_slots
+            WHERE doctor_id = $1 AND is_available = false AND date >= CURRENT_DATE
+            ORDER BY date, start_time
+        `;
+        const futureSlots = await pool.query(futureQuery , [doctor_id] );
+
+        const todayAppointments = appointmentsResult.rows;
+
+        // Combine doctor information with today's appointments
+        const doctorWithAppointments = {
+            ...doctor,
+            todayAppointments: todayAppointments,
+            activeSlots: activeSlots.rows,
+            futureSlots: futureSlots.rows
+        };
+
+        res.status(200).json(doctorWithAppointments);
+    } catch (error) {
+        console.error('Error fetching doctor with today\'s appointments:', error);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 
 module.exports = {
     getAppointmentsForDoctor,
@@ -225,5 +290,6 @@ module.exports = {
     createDoctor,
     updateDoctor,
     deleteDoctor,
-    getSlotsForDoctor
+    getSlotsForDoctor,
+    HomeScreenData
 };

@@ -184,6 +184,8 @@ const updateSlotAvailability = asyncHandler(async (req, res) => {
     const { slot_id, is_available, force = false } = req.body;
     const currentDate = new Date();
     try {
+        //check for conflicts 
+
         if (force) {
             // Delete future appointments using the slot
             await pool.query(
@@ -193,7 +195,7 @@ const updateSlotAvailability = asyncHandler(async (req, res) => {
         } else {
             // Check for future appointments using the slot
             const futureAppointmentsQuery = await pool.query(
-                `SELECT * FROM appointments WHERE slot_id = $1 AND appointment_date > CURRENT_DATE`,
+                `SELECT * FROM appointments WHERE slot_id = $1 AND appointment_date >= CURRENT_DATE`,
                 [slot_id]
             );
 

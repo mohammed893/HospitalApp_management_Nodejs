@@ -165,8 +165,43 @@ const deleteAppointment = asyncHandler(async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+const getAppointmentsByDoctorAndDate = asyncHandler(async (req, res) => {
+  const doctor_id = req.params.doctor_id;
+  const appointment_date = req.params.appointment_date;
 
+  try {
+    const result = await pool.query('SELECT * FROM appointments WHERE doctor_id = $1 AND appointment_date = $2', [doctor_id, appointment_date]);
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching appointments by doctor and date:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+const getTodayAppointmentsByDoctor = asyncHandler(async (req, res) => {
+  const { doctor_id } = req.params;
+
+  try {
+      const today = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
+
+      const queryText = `
+          SELECT a.*, p.firstname, p.email, p.phonenumber
+          FROM appointments a
+          JOIN patients p ON a.patient_id = p.patient_id
+          WHERE a.doctor_id = $1 AND DATE(a.appointment_date) = $2
+      `;
+      const queryParams = [doctor_id, today];
+
+      const { rows } = await pool.query(queryText, queryParams);
+      res.status(200).json(rows);
+  } catch (error) {
+      console.error('Error fetching today\'s appointments by doctor:', error);
+      res.status(500).json({ error: 'Server error' });
+  }
+});
 module.exports = {
+  getTodayAppointmentsByDoctor,
+  getAppointmentsByDoctorAndDate,
   createAppointment,
   getAppointmentsByDoctor,
   getAppointmentById,

@@ -6,7 +6,7 @@ const bodyParser = require('body-parser');
 const appointments = require('./routes/appointments/appointments');
 const doctors = require('./routes/doctors/doctors');
 const rays = require('./routes/mongodb/rays');
-app.use(cors({ origin: 'http://localhost:3000', }));
+app.use(cors());
 
 app.use(morgan(
    format = "combined",
