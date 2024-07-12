@@ -17,4 +17,7 @@ router.patch('/SlotAvailability' , TimeSlots.updateSlotAvailability);
 router.delete('/appointments/:appointment_id', doctorsController.cancelAppointmentByDoctor)
 router.get('/getSlots/:doctor_id',doctorsController.getSlotsForDoctor);
 router.get('/HomeScreenData/:doctor_id', doctorsController.HomeScreenData)
+router.post('/register' , doctorsController.register);
+router.post('/login' , doctorsController.login);
+
 module.exports = router;

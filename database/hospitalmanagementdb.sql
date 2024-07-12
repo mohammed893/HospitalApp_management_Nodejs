@@ -566,6 +566,8 @@ ALTER TABLE ONLY public.requests
 --
 -- Name: staff_managerid_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
+ALTER TABLE public.doctors ADD COLUMN password text;
+
 
 ALTER TABLE ONLY public.staff
     ADD CONSTRAINT staff_managerid_fkey FOREIGN KEY (managerid) REFERENCES public.staff(staffid) ON DELETE CASCADE;

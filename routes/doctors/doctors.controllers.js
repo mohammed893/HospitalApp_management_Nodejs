@@ -2,7 +2,8 @@
 const { pool } = require('../../configs/DataBase_conf');
 const asyncHandler = require('../../utils/asyncHandler');
 const {checkConflicts , deleteConflictingAppointments} = require('../TimeSlots/TimeSlots.controller');
-
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 const checkDoctorExists = async (doctor_id) => {
     const query = 'SELECT COUNT(*) FROM doctors WHERE doctor_id = $1';
@@ -312,7 +313,57 @@ const pastAppointmentsQuery = `
         res.status(500).json({ error: 'Server error' });
     }
 });
+const login = asyncHandler(async (req, res)=>{
+    const { email, password } = req.body;
+  
+    try {
+      const client = await pool.connect();
+      const result = await client.query('SELECT doctor_id, password FROM doctors WHERE email = $1', [email]);
+  
+      if (result.rows.length === 0) {
+        return res.status(401).json({ status: 'error', message: 'Invalid email or password' });
+      }
+  
+      const doctor = result.rows[0];
+      const isMatch = await bcrypt.compare(password, doctor.password);
+  
+      if (!isMatch) {
+        return res.status(401).json({ status: 'error', message: 'Invalid email or password' });
+      }
+  
+      const token = jwt.sign({ id: doctor.doctor_id }, 'your_jwt_secret', { expiresIn: '1h' });
+  
+      res.status(200).json({ status: 'success', id: doctor.doctor_id, token });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+  });
+  const register = asyncHandler(async (req, res) => {
+    const { firstname, qualification, specialization, experience, email, phone, working_hours, password } = req.body;
 
+    if (!firstname || !qualification || !specialization || !experience || !email || !phone || !working_hours || !password) {
+        return res.status(400).send('All fields are required');
+    }
+
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10); // Hash the password
+        const query = `
+            INSERT INTO doctors (firstname, qualification, specialization, experience, email, phone, working_hours, password)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING doctor_id
+        `;
+        const values = [firstname, qualification, specialization, experience, email, phone, working_hours, hashedPassword];
+
+        const result = await pool.query(query, values);
+        const doctorId = result.rows[0].doctor_id;
+
+        res.status(201).send(`Doctor registered with ID: ${doctorId}`);
+    } catch (error) {
+        console.error(error);
+        res.status(500).send('Server error');
+    }
+});
 module.exports = {
     getAppointmentsForDoctor,
     cancelAppointmentByDoctor,
@@ -322,5 +373,7 @@ module.exports = {
     updateDoctor,
     deleteDoctor,
     getSlotsForDoctor,
-    HomeScreenData
+    HomeScreenData,
+    login,
+    register
 };
