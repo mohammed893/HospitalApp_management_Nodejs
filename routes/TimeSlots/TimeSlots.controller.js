@@ -4,9 +4,11 @@ const cron = require('node-cron');
 
 // Generate slots for a doctor
 const generateSlots = asyncHandler(async (req, res) => {
-    const { doctor_id, start_time, end_time, slot_duration_minutes, activation_date,
+     let{ doctor_id, start_time, end_time, slot_duration_minutes, activation_date,
          available_days, force, activate_immediately } = req.body;
-
+        if (activate_immediately) {
+            activation_date = new Date();
+        }
     try {
         // Check if the doctor exists
         const doctorExistenceCheck = await pool.query(
@@ -48,7 +50,7 @@ const generateSlots = asyncHandler(async (req, res) => {
 });
 
 // Function to check for conflicts in appointments
-const checkConflicts = async (doctor_id, activation_date) => {
+const checkConflicts = async (doctor_id, activation_date , ) => {
     // First, check if the doctor exists
     const doctorExistenceCheck = await pool.query(
         `SELECT COUNT(*) FROM doctors WHERE doctor_id = $1`,
@@ -66,6 +68,7 @@ const checkConflicts = async (doctor_id, activation_date) => {
         `SELECT * FROM appointments WHERE doctor_id = $1 AND appointment_date >= $2`,
         [doctor_id, activation_date]
     );
+    console.log("Checked" + conflictCheck.rows);
 
     return conflictCheck.rows;
 };

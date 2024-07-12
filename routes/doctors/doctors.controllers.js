@@ -243,36 +243,67 @@ const HomeScreenData = asyncHandler(async (req, res) => {
         const doctor = doctorResult.rows[0];
 
         // Fetch today's appointments
-        const appointmentsQuery = `
+        const todayappointmentsQuery = `
             SELECT a.*, p.firstname, p.email, p.phonenumber
             FROM appointments a
             JOIN patients p ON a.patient_id = p.patient_id
-            WHERE a.doctor_id = $1 AND a.appointment_date = $2
+            WHERE a.doctor_id = $1 AND a.appointment_date = CURRENT_DATE
         `;
-        const appointmentsResult = await pool.query(appointmentsQuery, [doctor_id, currentDate]);
+        const appointmentsResult = await pool.query(todayappointmentsQuery, [doctor_id]);
 
         const activeQuery = `
-            SELECT * FROM time_slots
-            WHERE doctor_id = $1 AND is_available = true
-            ORDER BY date, start_time
-        `;
-        const activeSlots = await pool.query(activeQuery , [doctor_id] );
+        SELECT *, 
+               to_char(time_slots.date, 'YYYY-MM-DD') as date, 
+               to_char(time_slots.start_time, 'HH24:MI:SS') as start_time, 
+               to_char(time_slots.end_time, 'HH24:MI:SS') as end_time
+        FROM time_slots
+        WHERE time_slots.doctor_id = $1 AND time_slots.is_available = true
+        ORDER BY time_slots.date, time_slots.start_time
+    `;
+    
+    const futureSlotsQuery = `
+        SELECT *, 
+               to_char(time_slots.date, 'YYYY-MM-DD') as date, 
+               to_char(time_slots.start_time, 'HH24:MI:SS') as start_time, 
+               to_char(time_slots.end_time, 'HH24:MI:SS') as end_time
+        FROM time_slots
+        WHERE time_slots.doctor_id = $1 AND time_slots.is_available = false AND time_slots.date >= CURRENT_DATE
+        ORDER BY time_slots.date, time_slots.start_time
+    `;
+    const futureAppointmentsQuery = `
+    SELECT a.*, p.firstname, p.email, p.phonenumber,
+           to_char(a.appointment_date, 'YYYY-MM-DD') as appointment_date,
+           to_char(a.start_time, 'HH24:MI:SS') as start_time,
+           to_char(a.end_time, 'HH24:MI:SS') as end_time
+    FROM appointments a
+    JOIN patients p ON a.patient_id = p.patient_id
+    WHERE a.doctor_id = $1 AND a.appointment_date >= CURRENT_DATE
+`;
+const pastAppointmentsQuery = `
+    SELECT a.*, p.firstname, p.email, p.phonenumber,
+           to_char(a.appointment_date, 'YYYY-MM-DD') as appointment_date,
+           to_char(a.start_time, 'HH24:MI:SS') as start_time,
+           to_char(a.end_time, 'HH24:MI:SS') as end_time
+    FROM appointments a
+    JOIN patients p ON a.patient_id = p.patient_id
+    WHERE a.doctor_id = $1 AND a.appointment_date < CURRENT_DATE
+`;
+        const activeSlots = await pool.query(activeQuery , [doctor_id]);
 
-        const futureQuery = `
-            SELECT * FROM time_slots
-            WHERE doctor_id = $1 AND is_available = false AND date >= CURRENT_DATE
-            ORDER BY date, start_time
-        `;
-        const futureSlots = await pool.query(futureQuery , [doctor_id] );
+        
+        const futureSlots = await pool.query(futureSlotsQuery , [doctor_id]);
 
-        const todayAppointments = appointmentsResult.rows;
+        const FutureAppointments = await pool.query(futureAppointmentsQuery , [doctor_id]);
+        const pastAppointments = await pool.query(pastAppointmentsQuery , [doctor_id]);
 
         // Combine doctor information with today's appointments
         const doctorWithAppointments = {
             ...doctor,
-            todayAppointments: todayAppointments,
+            todayAppointments: appointmentsResult.rows,
             activeSlots: activeSlots.rows,
-            futureSlots: futureSlots.rows
+            futureSlots: futureSlots.rows,
+            futureAppointments: FutureAppointments.rows,
+            pastAppointments: pastAppointments.rows,
         };
 
         res.status(200).json(doctorWithAppointments);

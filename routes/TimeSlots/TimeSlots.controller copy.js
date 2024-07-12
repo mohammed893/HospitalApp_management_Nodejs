@@ -19,6 +19,7 @@ const generateSlots = asyncHandler(async (req, res) => {
 
         // Check for conflicts
         const conflicts = await checkConflicts(doctor_id, activation_date);
+        console.log("Checked Conflicts" + conflicts);
 
         // Handle conflicts if any
         if (conflicts.length > 0 && !force) {
@@ -65,6 +66,7 @@ const checkConflicts = async (doctor_id, activation_date) => {
         `SELECT * FROM appointments WHERE doctor_id = $1 AND appointment_date >= $2`,
         [doctor_id, activation_date]
     );
+    console.log("Checked" + conflictCheck);
 
     return conflictCheck.rows;
 };
